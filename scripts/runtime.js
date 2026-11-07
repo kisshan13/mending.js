@@ -15,28 +15,65 @@ frameInstrumentation.install()
 
 const runtime = new Runtime()
 
+let firstExecution = 0
+let secondExecution = 0
+
 runtime.register({
-	call: async () => {
-		console.log('hii')
+	call: async (data) => {
+		console.log(2)
+		if (secondExecution == 1) {
+			return {
+				type: 'completed',
+				data: data,
+			}
+		}
+
+		secondExecution += 1
+
 		return {
-			type: 'completed',
-			data: 'this is an example data',
+			type: 'spawn',
+			data: 'Identifier 2',
+			spawnIdentifier: '3',
 		}
 	},
-	getIdentifier: () => 'hii',
+	getIdentifier: () => '2',
+})
+
+runtime.register({
+	call: async () => {
+		console.log('3')
+		return {
+			type: 'completed',
+			data: 'Identifier 3',
+		}
+	},
+	getIdentifier: () => '3',
 })
 
 runtime.setDefault({
-	call: async () => {
-		console.log('hello')
+	call: async (data) => {
+		console.log(1)
+		if (firstExecution == 1) {
+			return {
+				type: 'completed',
+				data: data,
+			}
+		}
+
+		firstExecution += 1
+
 		return {
 			type: 'spawn',
-			data: 'hello',
-			spawnIdentifier: 'hii',
+			data: 'Identifier 1',
+			spawnIdentifier: '2',
 		}
 	},
-	getIdentifier: () => 'hello',
+	getIdentifier: () => '1',
 })
+
+// const data = await runtime.execute({ frameId: 'hello' })
+
+// console.log(data)
 
 const data = await context.run(
 	{ runtimeId: 'runtime-001' },
@@ -47,4 +84,4 @@ console.log(data)
 
 const events = collector.getEvents()
 
-console.log(events)
+// console.log(events)

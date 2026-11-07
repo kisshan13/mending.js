@@ -1,3 +1,4 @@
+import util from "node:util";
 import { FrameMissingSpawnId } from './error.js'
 import { Callable, FrameResult } from './types.js'
 import { generateId } from './utils.js'
@@ -32,5 +33,13 @@ export class Frame {
 
     getId() {
         return this.id
+    }
+
+    updateParam(param: any) {
+        this.params = param
+    }
+
+    [util.inspect.custom]() {
+        return `Frame<callable=${this.callable.getIdentifier()}; id=${this.id} params=${this.params};>`;
     }
 }
