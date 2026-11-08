@@ -1,36 +1,32 @@
 import { RuntimeCallableNotFound, RuntimeEntrypointError } from './error.js'
 import { Frame } from './frame.js'
+import { RuntimeState } from './state.js'
 import { Callable, FrameResult } from './types.js'
 
 type Status = 'idle' | 'running'
 
 type ExecutionParams = any
 
+interface RuntimeOpts {
+	state?: RuntimeState
+}
+
 export default class Runtime {
-	private frame: Frame[]
-	private executingFrame: Frame[]
 	private status: Status
-	private waiting?: Frame
 
-	private entrypoint?: Callable
+	private state: RuntimeState
 
-	private callable: Map<string, Callable>
-
-	constructor() {
-		this.frame = []
-		this.executingFrame = []
-		this.waiting = undefined
+	constructor(opts?: RuntimeOpts) {
 		this.status = 'idle'
-		this.entrypoint = undefined
-		this.callable = new Map()
+		this.state = opts?.state ?? new RuntimeState()
 	}
 
 	setDefault(item: Callable) {
-		this.entrypoint = item
+		this.state.setDefault(item)
 	}
 
 	register(item: Callable) {
-		this.callable.set(item.getIdentifier(), item)
+		this.state.register(item)
 	}
 
 	async getStatus() {
@@ -38,28 +34,41 @@ export default class Runtime {
 	}
 
 	async execute(param: ExecutionParams): Promise<FrameResult> {
-		if (!this.entrypoint) {
+		const entrypoint = this.state.getEntrypoint()
+
+		if (!entrypoint) {
 			throw new RuntimeEntrypointError(
 				'no entrypoint callable defined for the runtime, use setDefault() function to set an entrypoint callable for the runtime'
 			)
 		}
 
-		if (this.frame.length === 0) {
-			this.frame.push(new Frame({ callable: this.entrypoint, params: param }))
+		const anyWaiting = this.state.getWaiting()
+
+		if (anyWaiting) {
+			anyWaiting.updateParam(param)
+
+			this.state.push(anyWaiting, "normal")
 		}
 
-		const popped = this.frame.pop()
+		if (this.state.frameCount() === 0) {
+			this.state.push(
+				new Frame({ callable: entrypoint, params: param }),
+				'normal'
+			)
+		}
+
+		const popped = this.state.pop('normal')
 
 		if (!popped) {
 			throw new RuntimeEntrypointError('no frame found')
 		}
 
-		this.executingFrame.push(popped)
+		this.state.push(popped, 'execute')
 
 		const result = await Promise.resolve(popped.call())
 
 		if (result.type === 'spawn') {
-			const spawnCallable = this.callable.get(result.spawnIdentifier)
+			const spawnCallable = this.state.getCallable(result?.spawnIdentifier)
 
 			if (!spawnCallable) {
 				throw new RuntimeCallableNotFound(
@@ -67,8 +76,9 @@ export default class Runtime {
 				)
 			}
 
-			this.frame.push(
-				new Frame({ callable: spawnCallable, params: result.data })
+			this.state.push(
+				new Frame({ callable: spawnCallable, params: result.data }),
+				'normal'
 			)
 
 			return this.execute(result.data)
@@ -78,24 +88,30 @@ export default class Runtime {
 			return this.onComplete(result)
 		}
 
-		if (result.type === 'wait') {
-			this.waiting = popped
-
-			return result
+		if (result.type === "wait") {
+			return this.onWait(result)
 		}
 
 		return result
 	}
 
-	private async onComplete(result: FrameResult): Promise<FrameResult> {
-		this.executingFrame.pop()
+	private async onWait(result: FrameResult): Promise<FrameResult> {
+		const poppedExecution = this.state.pop("execute")
 
-		const anyParentFrame = this.executingFrame.pop()
+		this.state.setWaiting(poppedExecution)
+
+		return result
+	}
+
+	private async onComplete(result: FrameResult): Promise<FrameResult> {
+		this.state.pop('execute')
+
+		const anyParentFrame = this.state.pop('execute')
 
 		if (anyParentFrame) {
 			anyParentFrame?.updateParam(result.data)
 
-			this.frame.push(anyParentFrame)
+			this.state.push(anyParentFrame, 'normal')
 
 			return this.execute(result.data)
 		}

@@ -56,7 +56,9 @@ runtime.setDefault({
 		if (firstExecution == 1) {
 			return {
 				type: 'completed',
-				data: data,
+				data: {
+					"data": data
+				},
 			}
 		}
 
