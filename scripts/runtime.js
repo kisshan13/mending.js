@@ -21,7 +21,15 @@ let secondExecution = 0
 runtime.register({
 	call: async (data) => {
 		console.log(2)
-		if (secondExecution == 1) {
+		if (secondExecution == 0) {
+			secondExecution += 1
+			return {
+				type: "wait",
+				data: "need information"
+			}
+		}
+
+		if (secondExecution == 2) {
 			return {
 				type: 'completed',
 				data: data,
@@ -83,6 +91,12 @@ const data = await context.run(
 )
 
 console.log(data)
+
+const moreData = await context.run({
+	runtimeId: "runtime-001"
+}, async () => await runtime.execute({ frameId: 'hello' }))
+
+console.log(moreData)
 
 const events = collector.getEvents()
 

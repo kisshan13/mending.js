@@ -48,6 +48,9 @@ export default class Runtime {
 			anyWaiting.updateParam(param)
 
 			this.state.push(anyWaiting, "normal")
+			this.state.setWaiting(undefined)
+
+			return this.execute(param)
 		}
 
 		if (this.state.frameCount() === 0) {
