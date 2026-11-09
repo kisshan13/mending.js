@@ -1,11 +1,13 @@
 import { Frame } from './frame.js'
+import { Persistency } from './persistence.js'
 import { Callable } from './types.js'
 
 type CallableStateUpdate = (val: any) => any
 
-export class CallableState {
+export class CallableState extends Persistency {
 	private state: Map<string, any>
 	constructor(state: Record<string, any> | undefined) {
+		super()
 		this.state = new Map()
 
 		if (state) {
@@ -26,9 +28,25 @@ export class CallableState {
 
 		this.state.set(key, callback(currentState))
 	}
+
+	persist(): any {
+		const state: Record<string, any> = {}
+
+		this.state.forEach((val, key) => {
+			state[key] = val
+		})
+
+		return {
+			schema: '0.0.1',
+			kind: 'runtime.callable.state',
+			data: {
+				state: state,
+			},
+		}
+	}
 }
 
-export class RuntimeState {
+export class RuntimeState extends Persistency {
 	private frame: Frame[]
 	private executingFrame: Frame[]
 	private waiting?: Frame
@@ -38,6 +56,7 @@ export class RuntimeState {
 	private callableState: Map<string, CallableState>
 
 	constructor() {
+		super()
 		this.frame = []
 		this.executingFrame = []
 		this.entrypoint = undefined
@@ -121,5 +140,24 @@ export class RuntimeState {
 			identifier,
 			new CallableState(callable.getBaseState())
 		)
+	}
+
+	persist(): any {
+		const callableState: Record<string, any> = {}
+
+		this.callableState.forEach((val, key) => {
+			callableState[key] = val.persist()
+		})
+
+		return {
+			schema: '0.0.1',
+			kind: 'runtime.state',
+			data: {
+				frames: this.frame.map((f) => f.persist()),
+				executingFrames: this.executingFrame.map((f) => f.persist()),
+				entrypoint: this.entrypoint?.getIdentifier() || '',
+				callableState: callableState,
+			},
+		}
 	}
 }

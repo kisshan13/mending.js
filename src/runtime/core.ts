@@ -1,6 +1,7 @@
 import { Callable } from './callable.js'
 import { RuntimeCallableNotFound, RuntimeEntrypointError } from './error.js'
 import { Frame } from './frame.js'
+import { Persistency } from './persistence.js'
 import { RuntimeState } from './state.js'
 import { FrameResult } from './types.js'
 
@@ -12,12 +13,13 @@ interface RuntimeOpts {
 	state?: RuntimeState
 }
 
-export default class Runtime {
+export default class Runtime extends Persistency {
 	private status: Status
 
 	private state: RuntimeState
 
 	constructor(opts?: RuntimeOpts) {
+		super()
 		this.status = 'idle'
 		this.state = opts?.state ?? new RuntimeState()
 	}
@@ -123,5 +125,13 @@ export default class Runtime {
 		}
 
 		return result
+	}
+
+	persist(): any {
+		return {
+			schema: '0.0.1',
+			kind: 'runtime',
+			data: { state: this.state.persist() },
+		}
 	}
 }
