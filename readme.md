@@ -353,6 +353,8 @@ Mending.js is experimental. The following limitations should be considered when 
 - **No execution durability guarantees:** Applications should not assume that execution state survives application restarts.
 - **No orchestration layer:** Agent planning, scheduling, delegation strategies, and decision-making are outside the scope of the runtime.
 
+For practical examples covering basic execution, dynamic callable spawning, suspension, and nested execution, check out the [Examples](./examples/README.md).
+
 ## Development Status
 
 Mending.js is an experimental project and is still evolving.
