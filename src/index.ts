@@ -1,3 +1,4 @@
-import Runtime from "./runtime/core.js";
+import Runtime from './runtime/core.js'
+import { Callable } from './runtime/callable.js'
 
-export { Runtime }
+export { Runtime, Callable }
