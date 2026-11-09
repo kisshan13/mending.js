@@ -1,7 +1,8 @@
+import { Callable } from './callable.js'
 import { RuntimeCallableNotFound, RuntimeEntrypointError } from './error.js'
 import { Frame } from './frame.js'
 import { RuntimeState } from './state.js'
-import { Callable, FrameResult } from './types.js'
+import { FrameResult } from './types.js'
 
 type Status = 'idle' | 'running'
 
@@ -47,7 +48,7 @@ export default class Runtime {
 		if (anyWaiting) {
 			anyWaiting.updateParam(param)
 
-			this.state.push(anyWaiting, "normal")
+			this.state.push(anyWaiting, 'normal')
 			this.state.setWaiting(undefined)
 
 			return this.execute(param)
@@ -68,7 +69,9 @@ export default class Runtime {
 
 		this.state.push(popped, 'execute')
 
-		const result = await Promise.resolve(popped.call())
+		const result = await Promise.resolve(
+			popped.call(this.state.getCallableState(popped.callable))
+		)
 
 		if (result.type === 'spawn') {
 			const spawnCallable = this.state.getCallable(result?.spawnIdentifier)
@@ -91,7 +94,7 @@ export default class Runtime {
 			return this.onComplete(result)
 		}
 
-		if (result.type === "wait") {
+		if (result.type === 'wait') {
 			return this.onWait(result)
 		}
 
@@ -99,7 +102,7 @@ export default class Runtime {
 	}
 
 	private async onWait(result: FrameResult): Promise<FrameResult> {
-		const poppedExecution = this.state.pop("execute")
+		const poppedExecution = this.state.pop('execute')
 
 		this.state.setWaiting(poppedExecution)
 

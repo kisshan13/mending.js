@@ -1,6 +1,33 @@
 import { Frame } from './frame.js'
 import { Callable } from './types.js'
 
+type CallableStateUpdate = (val: any) => any
+
+export class CallableState {
+	private state: Map<string, any>
+	constructor(state: Record<string, any> | undefined) {
+		this.state = new Map()
+
+		if (state) {
+			Object.keys(state).forEach((key) => {
+				const val = state[key]
+
+				this.state.set(key, val)
+			})
+		}
+	}
+
+	get(key: string) {
+		return this.state.get(key)
+	}
+
+	set(key: string, callback: CallableStateUpdate) {
+		const currentState = this.state.get(key)
+
+		this.state.set(key, callback(currentState))
+	}
+}
+
 export class RuntimeState {
 	private frame: Frame[]
 	private executingFrame: Frame[]
@@ -8,12 +35,14 @@ export class RuntimeState {
 
 	private entrypoint?: Callable
 	private callable: Map<string, Callable>
+	private callableState: Map<string, CallableState>
 
 	constructor() {
 		this.frame = []
 		this.executingFrame = []
 		this.entrypoint = undefined
 		this.callable = new Map()
+		this.callableState = new Map()
 		this.waiting = undefined
 	}
 
@@ -39,10 +68,13 @@ export class RuntimeState {
 
 	setDefault(item: Callable) {
 		this.entrypoint = item
+
+		this.register(item)
 	}
 
 	register(item: Callable) {
 		this.callable.set(item.getIdentifier(), item)
+		this.onCallableRegister(item)
 	}
 
 	getEntrypoint() {
@@ -59,5 +91,35 @@ export class RuntimeState {
 
 	getWaiting() {
 		return this.waiting
+	}
+
+	getCallableState(callable: Callable): CallableState {
+		const isStateExists = this.callableState.get(callable.getIdentifier())
+
+		if (!isStateExists) {
+			this.callableState.set(
+				callable.getIdentifier(),
+				new CallableState(callable.getBaseState())
+			)
+
+			return this.callableState.get(callable.getIdentifier())!
+		}
+
+		return this.callableState.get(callable.getIdentifier())!
+	}
+
+	private onCallableRegister(callable: Callable) {
+		const identifier = callable.getIdentifier()
+
+		const isStateExists = this.callableState.get(identifier)
+
+		if (isStateExists) {
+			return
+		}
+
+		this.callableState.set(
+			identifier,
+			new CallableState(callable.getBaseState())
+		)
 	}
 }

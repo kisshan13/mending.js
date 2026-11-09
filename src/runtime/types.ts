@@ -1,6 +1,9 @@
+import { CallableState } from './state.js'
+
 export interface Callable {
 	getIdentifier: () => string
-	call: (...args: any) => Promise<CallableResult>
+	call: (data: any, state: CallableState) => Promise<CallableResult>
+	getBaseState: () => Record<string, any> | undefined
 }
 
 export type FrameResultType = 'wait' | 'spawn' | 'completed'

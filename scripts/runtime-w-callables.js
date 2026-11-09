@@ -2,12 +2,15 @@ import { Callable, Runtime } from '../dist/index.js'
 
 const runtime = new Runtime()
 
-const baseCallable = new Callable('callable-1', async (ctx) => {
-	console.log('Args : ')
-	console.log(ctx.data)
+const baseCallable = new Callable(
+	'callable-1',
+	async (ctx) => {
+		console.log(ctx.state.get('count'))
 
-	return ctx.complete('message this one is completed')
-})
+		return ctx.complete('message this one is completed')
+	},
+	{ count: 0 }
+)
 
 runtime.setDefault(baseCallable)
 

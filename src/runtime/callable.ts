@@ -1,3 +1,4 @@
+import { CallableState } from './state.js'
 import { CallableResult } from './types.js'
 
 interface CallableContext {
@@ -5,6 +6,7 @@ interface CallableContext {
 	complete: (data: any) => CallableResult
 	spawn: (data: any, callable: Callable) => CallableResult
 	data: any
+	state: CallableState
 }
 
 type CallableFn = (ctx: CallableContext) => Promise<CallableResult>
@@ -12,22 +14,33 @@ type CallableFn = (ctx: CallableContext) => Promise<CallableResult>
 export class Callable {
 	private identifier: string
 	private execute: CallableFn
+	private baseState?: Record<string, any>
 
-	constructor(identifier: string, execute: CallableFn) {
+	constructor(
+		identifier: string,
+		execute: CallableFn,
+		baseState?: Record<string, any>
+	) {
 		this.identifier = identifier
 		this.execute = execute
+		this.baseState = baseState
 	}
 
 	getIdentifier() {
 		return this.identifier
 	}
 
-	async call(...args: any): Promise<CallableResult> {
+	getBaseState(): Record<string, any> | undefined {
+		return this.baseState
+	}
+
+	async call(data: any, state: CallableState): Promise<CallableResult> {
 		return this.execute({
 			complete: Callable.complete,
 			spawn: Callable.spawn,
 			wait: Callable.wait,
-			data: args,
+			data: data,
+			state: state,
 		})
 	}
 
