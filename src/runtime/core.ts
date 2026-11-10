@@ -1,5 +1,9 @@
 import { Callable } from './callable.js'
-import { RuntimeCallableNotFound, RuntimeEntrypointError } from './error.js'
+import {
+	RuntimeCallableNotFound,
+	RuntimeEntrypointError,
+	RuntimePersistError,
+} from './error.js'
 import { Frame } from './frame.js'
 import { Persistency } from './persistence.js'
 import { RuntimeState } from './state.js'
@@ -132,6 +136,16 @@ export default class Runtime extends Persistency {
 			schema: '0.0.1',
 			kind: 'runtime',
 			data: { state: this.state.persist() },
+		}
+	}
+
+	static load(data: any): void {
+		const rawState = data?.data?.state
+
+		if (!rawState) {
+			throw new RuntimePersistError(
+				`failed to load the config. key "state" is missing from kind "runtime"`
+			)
 		}
 	}
 }

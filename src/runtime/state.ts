@@ -1,3 +1,4 @@
+import { RuntimePersistError } from './error.js'
 import { Frame } from './frame.js'
 import { Persistency } from './persistence.js'
 import { Callable } from './types.js'
@@ -44,6 +45,8 @@ export class CallableState extends Persistency {
 			},
 		}
 	}
+
+	static load(data: any): void {}
 }
 
 export class RuntimeState extends Persistency {
@@ -159,5 +162,43 @@ export class RuntimeState extends Persistency {
 				callableState: callableState,
 			},
 		}
+	}
+
+	static load(data: any): void {
+		const rawFrames = data?.data?.frames
+
+		if (!rawFrames) {
+			throw new RuntimePersistError(
+				`failed to load the config. key "frames" is missing from kind "runtime.state"`
+			)
+		}
+
+		const frames = rawFrames?.map((m: any) => Frame.load(m))
+
+		const rawExecutingFrames = data?.data?.executingFrames
+
+		if (!rawExecutingFrames) {
+			throw new RuntimePersistError(
+				'failed to load the config. key "executingFrames" is missing from kind "runtime.state"'
+			)
+		}
+
+		const executingFrames = rawExecutingFrames?.map((m: any) => Frame.load(m))
+
+		const entrypoint = data?.data?.entrypoint
+
+		const callbackState = data?.data?.callbackState
+
+		if (!callbackState) {
+			throw new RuntimePersistError(
+				'failed to load the config. key "callableState" is missing from kind "runtime.state"'
+			)
+		}
+
+		Object.keys(callbackState).forEach((key) => {
+			const rawState = callbackState[key]
+
+			const state = CallableState.load(rawState)
+		})
 	}
 }

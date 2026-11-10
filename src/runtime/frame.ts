@@ -54,6 +54,8 @@ export class Frame extends Persistency {
 		}
 	}
 
+	static load(data: any): void {}
+
 	[util.inspect.custom]() {
 		return `Frame<callable=${this.callable.getIdentifier()}; id=${this.id} params=${this.params};>`
 	}
