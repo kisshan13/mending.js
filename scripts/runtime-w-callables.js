@@ -1,6 +1,6 @@
-import { Callable, Runtime } from '../dist/index.js'
+import { Callable, CallableRegistry, Runtime } from '../dist/index.js'
 
-const runtime = new Runtime()
+const registry = new CallableRegistry()
 
 const baseCallable = new Callable(
 	'callable-1',
@@ -11,6 +11,10 @@ const baseCallable = new Callable(
 	},
 	{ count: 0 }
 )
+
+registry.add(baseCallable)
+
+const runtime = new Runtime({ registry: registry })
 
 runtime.setDefault(baseCallable)
 

@@ -6,6 +6,7 @@ import {
 } from './error.js'
 import { Frame } from './frame.js'
 import { Persistency } from './persistence.js'
+import { CallableRegistry } from './registry.js'
 import { RuntimeState } from './state.js'
 import { FrameResult } from './types.js'
 
@@ -15,6 +16,7 @@ type ExecutionParams = any
 
 interface RuntimeOpts {
 	state?: RuntimeState
+	registry: CallableRegistry
 }
 
 export default class Runtime extends Persistency {
@@ -22,10 +24,10 @@ export default class Runtime extends Persistency {
 
 	private state: RuntimeState
 
-	constructor(opts?: RuntimeOpts) {
+	constructor(opts: RuntimeOpts) {
 		super()
 		this.status = 'idle'
-		this.state = opts?.state ?? new RuntimeState()
+		this.state = opts?.state ?? new RuntimeState(opts.registry)
 	}
 
 	setDefault(item: Callable) {

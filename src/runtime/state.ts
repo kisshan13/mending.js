@@ -1,6 +1,7 @@
 import { RuntimePersistError } from './error.js'
 import { Frame } from './frame.js'
 import { Persistency } from './persistence.js'
+import { CallableRegistry } from './registry.js'
 import { Callable } from './types.js'
 
 type CallableStateUpdate = (val: any) => any
@@ -57,8 +58,10 @@ export class RuntimeState extends Persistency {
 	private entrypoint?: Callable
 	private callable: Map<string, Callable>
 	private callableState: Map<string, CallableState>
+	private registry: CallableRegistry
+	private registryCleanup: () => void
 
-	constructor() {
+	constructor(registry: CallableRegistry) {
 		super()
 		this.frame = []
 		this.executingFrame = []
@@ -66,6 +69,18 @@ export class RuntimeState extends Persistency {
 		this.callable = new Map()
 		this.callableState = new Map()
 		this.waiting = undefined
+		this.registry = registry
+		this.registryCleanup = registry.on('add', (callable) => {
+			this.onCallableRegister(callable)
+		})
+
+		this.initRegistrySetup()
+	}
+
+	private initRegistrySetup() {
+		const callables = this.registry.all()
+
+		callables.forEach((callable) => this.onCallableRegister(callable))
 	}
 
 	frameCount() {
@@ -95,7 +110,8 @@ export class RuntimeState extends Persistency {
 	}
 
 	register(item: Callable) {
-		this.callable.set(item.getIdentifier(), item)
+		this.registry.add(item)
+
 		this.onCallableRegister(item)
 	}
 
@@ -104,7 +120,7 @@ export class RuntimeState extends Persistency {
 	}
 
 	getCallable(identifier: string) {
-		return this.callable.get(identifier)
+		return this.registry.get(identifier)
 	}
 
 	setWaiting(frame?: Frame) {

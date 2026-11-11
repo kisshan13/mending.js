@@ -1,4 +1,4 @@
-import { Runtime } from '../dist/index.js'
+import { Callable, CallableRegistry, Runtime } from '../dist/index.js'
 
 import {
 	EventCollector,
@@ -13,73 +13,50 @@ const frameInstrumentation = new FrameInstrumentation(context, collector)
 
 frameInstrumentation.install()
 
-const runtime = new Runtime()
+const registry = new CallableRegistry()
 
 let firstExecution = 0
 let secondExecution = 0
 
-runtime.register({
-	call: async (data) => {
-		console.log(2)
-		if (secondExecution == 0) {
-			secondExecution += 1
-			return {
-				type: "wait",
-				data: "need information"
-			}
-		}
+const thirdCallable = new Callable('3', async (ctx) => {
+	console.log('3')
+	return ctx.complete('Identifier 3')
+})
 
-		if (secondExecution == 2) {
-			return {
-				type: 'completed',
-				data: data,
-			}
-		}
-
+const secondCallable = new Callable('2', async (ctx) => {
+	console.log(2)
+	if (secondExecution == 0) {
 		secondExecution += 1
+		return ctx.wait('need information')
+	}
 
-		return {
-			type: 'spawn',
-			data: 'Identifier 2',
-			spawnIdentifier: '3',
-		}
-	},
-	getIdentifier: () => '2',
+	if (secondExecution == 2) {
+		return ctx.complete(ctx.data)
+	}
+
+	secondExecution += 1
+
+	return ctx.spawn('Identifier 2', thirdCallable)
 })
 
-runtime.register({
-	call: async () => {
-		console.log('3')
-		return {
-			type: 'completed',
-			data: 'Identifier 3',
-		}
-	},
-	getIdentifier: () => '3',
+const baseCallable = new Callable('1', async (ctx) => {
+	console.log(1)
+	if (firstExecution == 1) {
+		return ctx.complete({ data: ctx.data })
+	}
+
+	firstExecution += 1
+
+	return ctx.spawn('Identifier 1', secondCallable)
 })
 
-runtime.setDefault({
-	call: async (data) => {
-		console.log(1)
-		if (firstExecution == 1) {
-			return {
-				type: 'completed',
-				data: {
-					"data": data
-				},
-			}
-		}
+registry.add(baseCallable, secondCallable, thirdCallable)
 
-		firstExecution += 1
+const runtime = new Runtime({ registry: registry })
 
-		return {
-			type: 'spawn',
-			data: 'Identifier 1',
-			spawnIdentifier: '2',
-		}
-	},
-	getIdentifier: () => '1',
-})
+runtime.register(secondCallable)
+runtime.register(thirdCallable)
+runtime.setDefault(baseCallable)
 
 // const data = await runtime.execute({ frameId: 'hello' })
 
@@ -92,9 +69,12 @@ const data = await context.run(
 
 console.log(data)
 
-const moreData = await context.run({
-	runtimeId: "runtime-001"
-}, async () => await runtime.execute({ frameId: 'hello' }))
+const moreData = await context.run(
+	{
+		runtimeId: 'runtime-001',
+	},
+	async () => await runtime.execute({ frameId: 'hello' })
+)
 
 console.log(moreData)
 

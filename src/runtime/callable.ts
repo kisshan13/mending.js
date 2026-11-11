@@ -66,25 +66,3 @@ export class Callable {
 		}
 	}
 }
-
-export class CallableRegistry {
-	private registry: Map<string, Callable>
-
-	constructor() {
-		this.registry = new Map()
-	}
-
-	add(...callables: Callable[]) {
-		for (const callable of callables) {
-			this.registry.set(callable.getIdentifier(), callable)
-		}
-	}
-
-	remove(callable: Callable) {
-		this.registry.delete(callable.getIdentifier())
-	}
-
-	get(identifier: string) {
-		return this.registry.get(identifier)
-	}
-}
