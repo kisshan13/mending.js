@@ -141,6 +141,10 @@ export default class Runtime extends Persistency {
 		}
 	}
 
+	shutdown() {
+		this.state.shutdown()
+	}
+
 	static load(data: any): Runtime {
 		const registry = data?.registry as CallableRegistry
 

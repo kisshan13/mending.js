@@ -165,6 +165,10 @@ export class RuntimeState extends Persistency {
 		)
 	}
 
+	shutdown() {
+		this.registryCleanup()
+	}
+
 	persist(): any {
 		const callableState: Record<string, any> = {}
 
