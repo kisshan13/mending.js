@@ -10,11 +10,11 @@ import { CallableRegistry } from './registry.js'
 import { RuntimeState } from './state.js'
 import { FrameResult } from './types.js'
 
-type Status = 'idle' | 'running'
+export type Status = 'idle' | 'running'
 
-type ExecutionParams = any
+export type ExecutionParams = any
 
-interface RuntimeOpts {
+export interface RuntimeOpts {
 	state?: RuntimeState
 	registry: CallableRegistry
 }

@@ -4,7 +4,7 @@ import { Persistency } from './persistence.js'
 import { CallableRegistry } from './registry.js'
 import { Callable } from './types.js'
 
-type CallableStateUpdate = (val: any) => any
+export type CallableStateUpdate = (val: any) => any
 
 export class CallableState extends Persistency {
 	private state: Map<string, any>
@@ -94,6 +94,7 @@ export class RuntimeState extends Persistency {
 	push(frame: Frame, type: 'normal' | 'execute') {
 		if (type === 'execute') {
 			this.executingFrame.push(frame)
+			return
 		}
 
 		this.frame.push(frame)
@@ -184,6 +185,7 @@ export class RuntimeState extends Persistency {
 				executingFrames: this.executingFrame.map((f) => f.persist()),
 				entrypoint: this.entrypoint?.getIdentifier() || '',
 				callableState: callableState,
+				waiting: this.waiting?.persist(),
 			},
 		}
 	}
@@ -259,6 +261,17 @@ export class RuntimeState extends Persistency {
 		runtimeState.callableState = callableState
 		runtimeState.frame = frames
 		runtimeState.executingFrame = executingFrames
+
+		const rawWaitingFrame = rawData?.data?.waiting
+
+		if (rawWaitingFrame) {
+			const waitingFrame = Frame.load({
+				registry: registry,
+				data: rawWaitingFrame,
+			})
+
+			runtimeState.waiting = waitingFrame
+		}
 
 		return runtimeState
 	}

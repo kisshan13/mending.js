@@ -1,7 +1,7 @@
 import { CallableState } from './state.js'
 import { CallableResult } from './types.js'
 
-interface CallableContext {
+export interface CallableContext {
 	wait: (data: any) => CallableResult
 	complete: (data: any) => CallableResult
 	spawn: (data: any, callable: Callable) => CallableResult
@@ -9,7 +9,7 @@ interface CallableContext {
 	state: CallableState
 }
 
-type CallableFn = (ctx: CallableContext) => Promise<CallableResult>
+export type CallableFn = (ctx: CallableContext) => Promise<CallableResult>
 
 export class Callable {
 	private identifier: string

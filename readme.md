@@ -1,300 +1,287 @@
 # Mending.js
 
-**A lightweight execution runtime for building agentic systems.**
+**A lightweight execution runtime for dynamically composed, agentic systems.**
 
-Mending.js is an execution runtime designed to manage dynamically composed function executions. It provides primitives for executing callables, spawning other callables, suspending execution, and resuming it with external input.
+Mending.js provides primitives for running registered functions, spawning child executions, pausing for external input, and propagating results back to callers. It manages execution frames and callable-specific state so applications can build their own workflows, agents, and delegation logic on top.
 
-Mending.js is intended to serve as a foundation for building agentic systems. It does not implement agent orchestration, planning, or decision-making. Instead, it provides the execution primitives that higher-level systems can build upon.
+Mending.js is **not** an agent framework. It does not implement model calls, planning, scheduling, or agent decision-making.
 
-> **Status: Under Development**
->
-> Mending.js is currently under active development and has not yet been published to the npm registry. Its APIs and interfaces are experimental and may change without notice, including breaking changes. There is currently no defined roadmap or commitment to API stability.
-
-## Core Concepts
-
-Mending.js currently exposes two primary abstractions.
-
-### Runtime
-
-The `Runtime` manages the execution lifecycle. It maintains execution state, resolves callable invocations, manages spawned executions, and handles suspension and completion.
-
-### Callable
-
-A `Callable` represents an executable unit registered with the runtime.
-
-A callable receives an execution context containing:
-
-- `data`: Input data for the current invocation.
-- `state`: State associated with the callable.
-- `spawn`: Request execution of another callable.
-- `wait`: Suspend the current execution.
-- `complete`: Mark the current execution as completed.
-
-Callables do not need to know how the runtime manages execution internally. They only need to return an execution result using the provided context.
+> **Status: Under development.** Mending.js has not been published to npm. Its API, persistence format, and execution behavior are experimental and may change without notice.
 
 ## Installation
 
-Mending.js has not yet been published to the npm registry.
+There is no published npm package yet. Build the project locally and import from its generated `dist` directory. The examples below assume imports from `./dist/index.js`; adjust the relative path for your project.
 
-For now, the project can only be explored and used through its source code or local build.
+## Quick start
 
-## Getting Started
-
-### 1. Import the runtime
-
-The package currently exports `Runtime` and `Callable` from its entrypoint.
+Create a callable, provide a registry to the runtime, set an entrypoint, and execute it.
 
 ```typescript
-import { Runtime, Callable } from './dist/index.js'
-```
+import { Callable, CallableRegistry, Runtime } from './dist/index.js'
 
-### 2. Create a callable
-
-A callable is initialized with an identifier and an asynchronous execution function.
-
-```typescript
 const greeting = new Callable('greeting', async ({ data, complete }) => {
-	return complete({
-		message: `Hello, ${data.name}!`,
-	})
+	return complete({ message: `Hello, ${data.name}!` })
 })
-```
 
-The execution function receives a context object containing the input data and runtime execution helpers.
-
-### 3. Initialize the runtime
-
-Create a runtime instance and register your callable.
-
-```typescript
-const runtime = new Runtime()
+const registry = new CallableRegistry()
+const runtime = new Runtime({ registry })
 
 runtime.setDefault(greeting)
+
+const result = await runtime.execute({ name: 'World' })
+
+console.log(result.type) // 'completed'
+console.log(result.data) // { message: 'Hello, World!' }
 ```
 
-`setDefault()` defines the entrypoint callable for the runtime. The entrypoint is also registered automatically.
+**Important:** `Runtime` requires an options object containing a `CallableRegistry`. The older `new Runtime()` initialization is not supported by the current implementation.
 
-Additional callables can be registered using `register()`.
+`setDefault()` selects the entrypoint and registers that callable automatically. Other callables must be registered before they can be spawned.
 
-```typescript
-runtime.register(greeting)
-```
+## Core concepts
 
-### 4. Execute
+### Runtime
 
-Start execution by passing the initial input to `execute()`.
+`Runtime` executes the entrypoint, tracks execution frames, dispatches spawned callables, suspends a waiting frame, and returns a result to the application. It is initialized with a registry and optionally an existing `RuntimeState`.
 
-```typescript
-const result = await runtime.execute({
-	name: 'World',
-})
+### Callable
 
-console.log(result)
-```
-
-The runtime executes the entrypoint and returns a `FrameResult`.
-
-## Callable Execution
-
-A callable can produce three types of execution results.
-
-| Result      | Description                                                                |
-| ----------- | -------------------------------------------------------------------------- |
-| `completed` | Marks the current callable execution as completed.                         |
-| `spawn`     | Requests the runtime to execute another registered callable.               |
-| `wait`      | Suspends the current callable execution and returns control to the caller. |
-
-These results are created using the execution context provided to each callable.
-
-### Completing execution
-
-Use `complete()` when a callable has finished its execution.
+A `Callable` represents one executable unit. It has a unique string identifier, an asynchronous execution function, and an optional initial state object.
 
 ```typescript
-const task = new Callable('task', async ({ data, complete }) => {
-	const result = data.value * 2
-
-	return complete(result)
+const task = new Callable('task', async (ctx) => ctx.complete(ctx.data), {
+	attempts: 0,
 })
 ```
 
-The returned data is propagated to the parent callable when the current callable was spawned by another callable.
+Each invocation receives a `CallableContext`:
+
+| Member                  | Purpose                                                   |
+| ----------------------- | --------------------------------------------------------- |
+| `data`                  | Input for this invocation.                                |
+| `state`                 | State associated with the callable's identifier.          |
+| `complete(data)`        | Complete the callable and return a result.                |
+| `spawn(data, callable)` | Ask the runtime to execute a registered child callable.   |
+| `wait(data)`            | Suspend execution and return a result to the application. |
+
+The callable must return one of these results. Calling a helper constructs a result; it does not itself change the runtime's control flow until the callable **returns** that result.
+
+### CallableRegistry
+
+The `CallableRegistry` maps identifiers to callable implementations. A runtime uses the registry to resolve spawn requests and to reconstruct frame references when loading serialized state.
+
+```typescript
+const registry = new CallableRegistry()
+registry.add(worker, coordinator)
+
+const runtime = new Runtime({ registry })
+runtime.setDefault(coordinator)
+```
+
+The registry accepts multiple callables with `add(...callables)`. It exposes `get(identifier)`, `all()`, `remove(callable)`, and add/remove event subscriptions via `on(event, callback)`. Adding an identifier that already exists does not replace its registered callable.
+
+### Frames and state
+
+A `Frame` represents one callable invocation, including its callable, input parameters, and generated frame identifier. The runtime maintains stacks of frames while it processes spawn and completion results.
+
+A `CallableState` is separate from a frame: it is keyed by the **callable identifier**. Repeated invocations of the same callable in one runtime state share that callable's state. It is not a separate state object for each spawned frame.
+
+## Execution results
+
+A callable can return three result types:
+
+| Type        | Meaning                                                            |
+| ----------- | ------------------------------------------------------------------ |
+| `completed` | The current callable has finished.                                 |
+| `spawn`     | Execute a registered child callable with the supplied data.        |
+| `wait`      | Suspend the current callable and yield control to the application. |
+
+For valid spawn requests, the runtime ordinarily handles `spawn` internally. The caller of `runtime.execute()` typically receives a `completed` or `wait` frame result.
+
+### Completion
+
+```typescript
+const double = new Callable('double', async ({ data, complete }) => {
+	return complete({ value: data.value * 2 })
+})
+```
+
+If a child callable completes, its completion data replaces the parent frame's input and the runtime invokes the parent callable again. This is **re-execution of the parent function**, not continuation from the exact JavaScript instruction where `spawn()` was called.
 
 ### Spawning another callable
 
-A callable can request the runtime to execute another callable using `spawn()`.
-
 ```typescript
+import { Callable, CallableRegistry, Runtime } from './dist/index.js'
+
 const worker = new Callable('worker', async ({ data, complete }) => {
-	return complete({
-		result: data.value * 2,
-	})
+	return complete({ doubled: data.value * 2 })
 })
 
-const orchestrator = new Callable('orchestrator', async ({ data, spawn }) => {
-	return spawn({ value: data.value }, worker)
-})
-```
+const coordinator = new Callable(
+	'coordinator',
+	async ({ data, state, spawn, complete }) => {
+		if (!state.get('workerStarted')) {
+			state.set('workerStarted', () => true)
+			return spawn({ value: data.value }, worker)
+		}
 
-Register the worker and configure the orchestrator as the entrypoint.
+		return complete({ workerResult: data })
+	},
+	{ workerStarted: false }
+)
 
-```typescript
-const runtime = new Runtime()
+const registry = new CallableRegistry()
+const runtime = new Runtime({ registry })
 
 runtime.register(worker)
-runtime.setDefault(orchestrator)
+runtime.setDefault(coordinator)
 
-const result = await runtime.execute({
-	value: 21,
-})
+const result = await runtime.execute({ value: 21 })
+console.log(result.data) // { workerResult: { doubled: 42 } }
 ```
 
-When the worker completes, its result is passed back to the parent callable as its updated input.
+The parent uses callable state to remember that it already spawned the child. Without that guard, the parent could spawn the same child again when it is re-invoked with the child's result.
 
-The parent callable is invoked again with that result, allowing it to continue its execution logic.
-
-Callables referenced through `spawn()` must be registered with the runtime.
+`spawn(data, callable)` uses the callable's identifier. The callable must be available in the registry; passing an unregistered object does not register it automatically.
 
 ### Waiting for external input
 
-A callable can suspend its execution when it requires external input.
-
-Use `wait()` to return control to the application.
-
 ```typescript
+import { Callable, CallableRegistry, Runtime } from './dist/index.js'
+
 const approval = new Callable(
 	'approval',
-	async ({ data, wait, complete, state }) => {
-		if (!data.approved) {
-			state.set('request', () => data)
-
-			return wait({
-				reason: 'approval_required',
-				amount: data.amount,
-			})
+	async ({ data, state, wait, complete }) => {
+		if (data.approved !== true) {
+			state.set('originalRequest', () => data)
+			return wait({ reason: 'approval_required', amount: data.amount })
 		}
 
-		const request = state.get('request')
-
-		return complete({
-			approved: true,
-			amount: request.amount,
-		})
+		const originalRequest = state.get('originalRequest')
+		return complete({ approved: true, amount: originalRequest.amount })
 	}
 )
-```
 
-When a callable returns `wait`, the runtime retains the waiting frame in its current runtime state and returns the waiting result to the caller.
-
-The application can then obtain the required input and call `execute()` again on the same runtime instance.
-
-```typescript
-const runtime = new Runtime()
-
+const registry = new CallableRegistry()
+const runtime = new Runtime({ registry })
 runtime.setDefault(approval)
 
-const firstResult = await runtime.execute({
-	amount: 500,
-	approved: false,
-})
+const pending = await runtime.execute({ amount: 500, approved: false })
+console.log(pending.type) // 'wait'
 
-console.log(firstResult)
-
-// Provide the required external input.
-const resumedResult = await runtime.execute({
-	approved: true,
-})
-
-console.log(resumedResult)
+// Resume using the SAME runtime instance.
+const finished = await runtime.execute({ approved: true })
+console.log(finished.data) // { approved: true, amount: 500 }
 ```
 
-The runtime re-invokes the suspended callable with the newly provided input.
+When a callable returns `wait`, the runtime retains one waiting frame in memory. The next call to `execute(input)` updates that frame's input and invokes the callable again.
 
-**Note:** This is runtime-managed re-execution, not restoration of the original JavaScript instruction pointer or local variables. Use `CallableState` to retain data across callable invocations.
+**Resumption replaces the prior frame input; it does not merge objects.** Store any data needed after resumption in `CallableState` (or send it again). JavaScript local variables and the original function call stack are not preserved.
 
-The current implementation supports one waiting frame per runtime instance.
+The implementation maintains **one waiting frame per runtime instance**. A nested callable can wait, and a later callable can wait after the first is resumed, but simultaneous independent waiting frames are not supported.
 
-## Callable State
+## Callable state
 
-Each callable can maintain its own state through the `state` object provided in its execution context.
-
-State is associated with the callable identifier and shared across its invocations within the same runtime state.
-
-### Reading state
+State is provided through the callable execution context.
 
 ```typescript
-const value = state.get('counter')
+const count = state.get('count')
+
+state.set('count', (current) => (current ?? 0) + 1)
 ```
 
-### Updating state
+`state.set(key, updater)` takes a callback; it does not accept a direct replacement value. The callback receives the current value and returns the new value.
 
-State updates use a callback that receives the current value.
-
-```typescript
-state.set('counter', (current) => {
-	return (current ?? 0) + 1
-})
-```
-
-### Initial state
-
-A callable can also define an initial state through its constructor.
+Provide initial state as the third argument to `new Callable(identifier, execute, baseState?)`:
 
 ```typescript
 const counter = new Callable(
 	'counter',
 	async ({ state, complete }) => {
-		state.set('count', (current) => {
-			return (current ?? 0) + 1
-		})
-
-		return complete({
-			count: state.get('count'),
-		})
+		state.set('count', (current) => current + 1)
+		return complete({ count: state.get('count') })
 	},
-	{
-		count: 0,
-	}
+	{ count: 0 }
 )
 ```
 
-The initial state is used when the runtime first initializes state for that callable.
+Values should be serializable if you intend to use `persist()` and JSON storage.
 
-## Runtime API
+## Persistence and loading
 
-### `new Runtime(opts?)`
+The current source includes a serialization API for the runtime, frame stacks, and callable state:
 
-Creates a new runtime instance.
+- `runtime.persist()` produces a structured snapshot (currently labeled schema `0.0.1`).
+- `Runtime.load({ registry, data })` constructs a runtime from a snapshot.
+- `Frame`, `RuntimeState`, and `CallableState` also expose `persist()` and `load()` methods.
+
+Serialized snapshots store **callable identifiers**, not executable functions. Re-register the corresponding callables before loading.
 
 ```typescript
-const runtime = new Runtime()
+import { Callable, CallableRegistry, Runtime } from './dist/index.js'
+
+const job = new Callable('job', async ({ data, complete }) => {
+	return complete({ value: data.value * 2 })
+})
+
+const registry = new CallableRegistry()
+registry.add(job)
+
+const runtime = new Runtime({ registry })
+runtime.setDefault(job)
+
+// Serialize a configured runtime before execution.
+const serialized = JSON.stringify(runtime.persist())
+
+// In a new process, recreate the registry and its callables first.
+// Here we reuse the registry only to keep the example short.
+const restored = Runtime.load({
+	registry,
+	data: JSON.parse(serialized),
+})
+
+const result = await restored.execute({ value: 21 })
+console.log(result.data) // { value: 42 }
 ```
 
-An optional `RuntimeState` can be supplied through the constructor.
+You must store and retrieve the serialized value yourself. Mending.js does not currently provide a database adapter, automatic checkpointing, or restart-safe execution guarantees.
 
-### `runtime.setDefault(callable)`
+**Critical restriction:** `RuntimeState.persist()` does **not** serialize its `waiting` field. Consequently, a snapshot made while a callable is waiting cannot currently restore that waiting frame. Treat persistence as an experimental serialization facility, **not** reliable suspend-and-resume durability across process restarts.
 
-Defines the default entrypoint callable.
+See the [examples](./examples/README.md) for basic execution, spawning, multiple suspension points, and snapshot loading.
 
-The entrypoint is automatically registered with the runtime.
+## API reference
 
-### `runtime.register(callable)`
+### `Runtime`
 
-Registers a callable using its identifier.
+| API                                   | Behavior                                                       |
+| ------------------------------------- | -------------------------------------------------------------- |
+| `new Runtime({ registry, state? })`   | Create a runtime. `registry` is required; `state` is optional. |
+| `setDefault(callable)`                | Set and register the entrypoint.                               |
+| `register(callable)`                  | Register an additional callable.                               |
+| `execute(data): Promise<FrameResult>` | Start or continue execution.                                   |
+| `persist()`                           | Return a serializable runtime snapshot.                        |
+| `Runtime.load({ registry, data })`    | Load a snapshot using a callable registry.                     |
+| `getStatus()`                         | Return a promise with the current status value.                |
+| `shutdown()`                          | Call the runtime state's registry-listener cleanup.            |
 
-Registered callables can be referenced by other callables through `spawn()`.
+`RuntimeOpts` is `{ registry: CallableRegistry; state?: RuntimeState }`. `ExecutionParams` is currently typed as `any`. `Status` is declared as `'idle' | 'running'`, but the supplied implementation does not update `status` during execution; do not use `getStatus()` as a dependable activity signal yet.
 
-### `runtime.execute(data)`
+### `Callable`
 
-Starts or continues execution using the supplied input.
+| API                                             | Behavior                                            |
+| ----------------------------------------------- | --------------------------------------------------- |
+| `new Callable(identifier, execute, baseState?)` | Construct an executable unit.                       |
+| `getIdentifier()`                               | Return the identifier.                              |
+| `getBaseState()`                                | Return the optional initial state.                  |
+| `call(data, state)`                             | Invoke the execution function with context helpers. |
+| `Callable.complete(data)`                       | Construct a completion result.                      |
+| `Callable.spawn(data, callable)`                | Construct a spawn result.                           |
+| `Callable.wait(data)`                           | Construct a wait result.                            |
 
-Returns a `Promise<FrameResult>`.
+### `FrameResult`
 
-Depending on the execution flow, the result can represent a completed execution or a suspended execution.
-
-## Execution Result
-
-The runtime returns a `FrameResult` with the following structure:
+The runtime returns the following shape:
 
 ```typescript
 interface FrameResult {
@@ -305,60 +292,56 @@ interface FrameResult {
 }
 ```
 
-- `type`: Describes the execution outcome.
-- `frameId`: Identifier of the frame that produced the result.
-- `data`: Data returned by the callable.
-- `spawnIdentifier`: Identifier of the spawned callable, if applicable.
+`frameId` identifies the frame that returned the result. `spawnIdentifier` is the target callable identifier for a spawn result; the current `Frame.call()` implementation sets it to an empty string for other result types.
 
-## Building Agentic Systems
+The result returned directly by a callable differs slightly:
 
-Mending.js is designed to be a foundation for higher-level execution systems, including agentic applications.
+```typescript
+interface CallableResult {
+	type: 'wait' | 'spawn' | 'completed'
+	data: any
+	spawnIdentifier?: string
+}
+```
 
-Since a callable can spawn another callable, execution can be composed dynamically rather than being restricted to a predefined sequence.
+### Exported types and errors
 
-For example, an application could build a hierarchy of agents:
+The package entrypoint also exports `CallableContext`, `CallableFn`, `CallableState`, `CallableStateUpdate`, `RuntimeState`, `Frame`, `Persistency`, `ICallable`, `FrameResultType`, `CallableResultType`, `RuntimeOpts`, `ExecutionParams`, `Status`, and these error classes:
+
+- `RuntimeError`, `RuntimeEntrypointError`, `RuntimeFrameError`
+- `RuntimeCallableNotFound`, `FrameMissingSpawnId`, `RuntimePersistError`
+
+`RuntimeEntrypointError` is used for a missing entrypoint; `RuntimeCallableNotFound` is used when a spawn identifier cannot be resolved; persistence-loading errors use `RuntimePersistError`.
+
+## Building agentic systems
+
+The execution model supports dynamic delegation with nested callables:
 
 ```text
 Main Agent
-    |
-    └── Research Agent
-            |
-            └── Research Workflow
-                    |
-                    ├── Web Agent
-                    |       |
-                    |       └── Wait for human approval
-                    |
-                    └── Analysis Agent
-                            |
-                            └── Wait for additional input
+  └── Research Agent
+       ├── Web Agent
+       │    └── WAIT: Approval required
+       └── Analysis Agent
+            └── WAIT: Additional input required
 ```
 
-Each agent can independently request execution of other callables or suspend its execution when external input is required.
+Each callable decides whether to complete, spawn, or wait. Mending.js handles dispatch and result propagation; the application supplies the logic for decisions, permissions, tool use, scheduling, and retries.
 
-Mending.js manages the execution lifecycle and result propagation, while the consuming application remains responsible for orchestration, planning, and decision-making.
+## Current limitations and implementation caveats
 
-The runtime itself has no dependency on agents or LLMs. It can execute any compatible callable.
+- **Experimental API:** No npm release or compatibility guarantees.
+- **No persistent storage integration:** You must save snapshots yourself; there is no automatic checkpointing.
+- **Waiting frames are not serialized:** Paused execution cannot reliably be restored through `Runtime.load()`.
+- **Single waiting frame:** Only one `waiting` slot exists per runtime state.
+- **No distributed execution, retries, or scheduling:** These concerns belong to the application.
+- **Callable state is shared per identifier:** Concurrent or repeated logical invocations of the same callable do not get isolated state automatically.
+- **Frame-stack issue:** The current `RuntimeState.push(frame, 'execute')` also pushes the frame onto the normal stack. This can leave extra frames and makes repeated execution and snapshot recovery unreliable until corrected.
+- **Registry-listener cleanup issue:** `CallableRegistry.on()` stores listeners under an event-suffixed key, but its returned disposer deletes the unsuffixed ID. This affects cleanup through `shutdown()`.
+- **Status reporting is incomplete:** `getStatus()` currently does not reflect active execution.
 
-## Current Limitations
+See [Examples](./examples/README.md) for runnable patterns that match the current constructor and API surface.
 
-Mending.js is experimental. The following limitations should be considered when using it:
+## Development status
 
-- **No npm release:** The project has not been published to the npm registry.
-- **Unstable API:** Public interfaces may change without notice.
-- **In-memory execution state:** Runtime state is maintained within the runtime instance. Persistent storage and recovery across process restarts are not currently provided.
-- **Single waiting frame:** The current implementation maintains a single waiting frame per runtime instance.
-- **No distributed execution:** The runtime does not currently coordinate execution across multiple processes or machines.
-- **No automatic retries:** Failed callable executions are not automatically retried.
-- **No execution durability guarantees:** Applications should not assume that execution state survives application restarts.
-- **No orchestration layer:** Agent planning, scheduling, delegation strategies, and decision-making are outside the scope of the runtime.
-
-For practical examples covering basic execution, dynamic callable spawning, suspension, and nested execution, check out the [Examples](./examples/README.md).
-
-## Development Status
-
-Mending.js is an experimental project and is still evolving.
-
-There is currently no defined development roadmap, and the API should be considered unstable. Features, interfaces, and execution semantics may change as the project develops.
-
-Feedback, experimentation, and contributions are welcome.
+Mending.js is actively evolving. Interfaces and runtime behavior may change without notice; there is no published stability roadmap. Feedback, experiments, and contributions are welcome.

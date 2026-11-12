@@ -1,60 +1,52 @@
-# Examples
+# Mending.js examples
 
-The following examples demonstrate the core execution primitives provided by Mending.js.
+These examples use the API exported by the supplied source. Every example creates a `CallableRegistry` and passes it to `new Runtime({ registry })`. They assume a locally built package and imports from `../dist/index.js`.
 
-## 1. Basic Callable Execution
+> **Development status:** The runtime is experimental. The examples show its intended execution API; see the [root README](../README.md#current-limitations-and-implementation-caveats) for current frame-stack and persistence issues.
 
-The simplest way to use Mending.js is to create a callable, register it as the default entrypoint, and execute the runtime.
+## 1. Basic callable execution
+
+Create a callable with initial state, select it as the runtime entrypoint, and execute it.
 
 ```typescript
-import { Callable, Runtime } from '../dist/index.js'
+import { Callable, CallableRegistry, Runtime } from '../dist/index.js'
 
-const runtime = new Runtime()
+const registry = new CallableRegistry()
 
 const baseCallable = new Callable(
 	'callable-1',
 	async (ctx) => {
-		console.log(ctx.state.get('count'))
+		console.log('Initial count:', ctx.state.get('count'))
+		ctx.state.set('count', (count) => count + 1)
 
-		return ctx.complete('This callable is completed')
+		return ctx.complete({
+			message: 'This callable is completed',
+			count: ctx.state.get('count'),
+		})
 	},
-	{
-		count: 0,
-	}
+	{ count: 0 }
 )
 
+const runtime = new Runtime({ registry })
 runtime.setDefault(baseCallable)
 
-const result = await runtime.execute({
-	hii: 'hello',
-})
+const result = await runtime.execute({ hello: 'world' })
 
-console.log(result)
+console.log(result.type) // 'completed'
+console.log(result.data) // { message: 'This callable is completed', count: 1 }
 ```
 
-**What's happening?**
+**What happens?** The runtime finds the entrypoint, creates a frame with the supplied input, invokes the callable with its state, and returns a `FrameResult`. Calling `setDefault()` also registers that callable, so a separate `register()` call is unnecessary.
 
-1. A callable is created with the identifier `callable-1`.
-2. An initial state is provided with `count` set to `0`.
-3. The callable is registered as the runtime's entrypoint.
-4. The runtime executes the callable with the provided input.
-5. The callable returns a completion result.
+## 2. Dynamic callable spawning
 
-The runtime returns a `FrameResult` containing the completion data and frame identifier.
-
-## 2. Dynamic Callable Spawning
-
-A callable can dynamically request the execution of another callable using `ctx.spawn()`.
-
-This allows execution to be delegated without directly invoking another callable.
+An orchestrator can delegate work by **returning** `ctx.spawn(data, callable)`; the runtime resolves the child callable from its registry. When the child completes, the parent is invoked again with the child's completion data.
 
 ```typescript
-import { Callable, Runtime } from '../dist/index.js'
-
-const runtime = new Runtime()
+import { Callable, CallableRegistry, Runtime } from '../dist/index.js'
 
 const worker = new Callable('worker', async (ctx) => {
-	console.log('Worker executing:', ctx.data)
+	console.log('Worker input:', ctx.data)
 
 	return ctx.complete({
 		message: 'Worker completed successfully',
@@ -62,64 +54,54 @@ const worker = new Callable('worker', async (ctx) => {
 	})
 })
 
-const orchestrator = new Callable('orchestrator', async (ctx) => {
-	// Check whether the worker has already executed.
-	if (!ctx.state.get('workerSpawned')) {
-		ctx.state.set('workerSpawned', () => true)
+const orchestrator = new Callable(
+	'orchestrator',
+	async (ctx) => {
+		if (!ctx.state.get('workerSpawned')) {
+			ctx.state.set('workerSpawned', () => true)
+			return ctx.spawn({ value: ctx.data.value }, worker)
+		}
 
-		console.log('Spawning worker...')
+		// This invocation receives the completed worker's result.
+		return ctx.complete({
+			message: 'Orchestration completed',
+			workerResult: ctx.data,
+		})
+	},
+	{ workerSpawned: false }
+)
 
-		return ctx.spawn({ value: 21 }, worker)
-	}
-
-	// The callable receives the worker's completion data.
-	console.log('Worker result:', ctx.data)
-
-	return ctx.complete({
-		message: 'Orchestration completed',
-		workerResult: ctx.data,
-	})
-})
+const registry = new CallableRegistry()
+const runtime = new Runtime({ registry })
 
 runtime.register(worker)
 runtime.setDefault(orchestrator)
 
-const result = await runtime.execute({
-	task: 'process-data',
-})
-
-console.log(result)
+const result = await runtime.execute({ value: 21 })
+console.log(result.type) // 'completed'
+console.log(result.data.workerResult.processed) // 42
 ```
 
-**What's happening?**
+**Execution flow:**
 
-1. The runtime starts executing `orchestrator`.
-2. The orchestrator requests execution of `worker` using `ctx.spawn()`.
-3. The runtime creates a new frame for the worker and executes it.
-4. The worker completes and returns its result.
-5. The runtime propagates the result back to the parent callable.
-6. The orchestrator is invoked again with the worker's result.
-7. The orchestrator completes the execution.
+1. The entrypoint runs and returns a `spawn` result for `worker`.
+2. The runtime creates a child frame and invokes `worker`.
+3. The worker completes with `{ processed: 42, ... }`.
+4. The runtime replaces the parent's input with that completion data and invokes the parent again.
+5. `workerSpawned` prevents a repeated spawn, so the parent completes.
 
-Notice that the orchestrator doesn't directly call the worker. It delegates execution to the runtime.
+The worker must be registered beforehand. Parent re-invocation starts the execution function again; it does not restore local variables from the previous invocation.
 
-## 3. Suspending and Resuming Execution
+## 3. Suspending and resuming execution
 
-A callable can suspend its execution when external input is required.
-
-The runtime returns the waiting result to the application. The application can provide the required input through another call to `execute()` on the same runtime instance.
+A callable can return `wait` when it needs input from outside the runtime. The application then calls `execute()` again **on the same runtime instance**.
 
 ```typescript
-import { Callable, Runtime } from '../dist/index.js'
-
-const runtime = new Runtime()
+import { Callable, CallableRegistry, Runtime } from '../dist/index.js'
 
 const approval = new Callable('approval', async (ctx) => {
-	// Initial execution: approval has not been provided.
-	if (!ctx.data.approved) {
+	if (ctx.data.approved !== true) {
 		ctx.state.set('amount', () => ctx.data.amount)
-
-		console.log('Waiting for approval...')
 
 		return ctx.wait({
 			reason: 'approval_required',
@@ -127,91 +109,59 @@ const approval = new Callable('approval', async (ctx) => {
 		})
 	}
 
-	// Resumed execution.
-	console.log('Approval received!')
-
 	return ctx.complete({
 		status: 'approved',
 		amount: ctx.state.get('amount'),
 	})
 })
 
+const registry = new CallableRegistry()
+const runtime = new Runtime({ registry })
 runtime.setDefault(approval)
 
-// First execution.
 const waitingResult = await runtime.execute({
 	amount: 500,
 	approved: false,
 })
 
-console.log('Waiting result:', waitingResult)
+console.log(waitingResult.type) // 'wait'
+console.log(waitingResult.data)
+// { reason: 'approval_required', amount: 500 }
 
-// Simulate receiving external input.
-const completedResult = await runtime.execute({
-	approved: true,
-})
+// Simulate receiving an external approval.
+const completedResult = await runtime.execute({ approved: true })
 
-console.log('Completed result:', completedResult)
+console.log(completedResult.type) // 'completed'
+console.log(completedResult.data)
+// { status: 'approved', amount: 500 }
 ```
 
-**What's happening?**
+**Important behavior:** The resumed input replaces the waiting frame's previous input. Because the approval response does not contain `amount`, the callable stores it in `CallableState` before waiting. Only the callable's data and state are retained; execution does not resume inside a previous JavaScript function call.
 
-1. The callable starts executing with an amount of `500`.
-2. Since approval has not been provided, it returns `ctx.wait()`.
-3. The runtime retains the waiting frame in its current execution state.
-4. The application receives the waiting result and can return it to the client.
-5. Once approval is received, the application calls `runtime.execute()` again with the new input.
-6. The runtime re-invokes the waiting callable with the updated input.
-7. The callable retrieves its previously stored amount from `CallableState`.
-8. The callable completes its execution.
+## 4. Nested execution with two suspension points
 
-## 4. Nested Execution with Multiple Suspension Points
-
-Mending.js allows a callable to spawn another callable, which can independently spawn additional callables.
-
-This also means that suspension is not restricted to the entrypoint. A callable at any level of the execution hierarchy can request external input.
-
-Consider a scenario where a Main Agent delegates research to a Research Agent, which subsequently spawns a Web Agent.
-
-Both agents can request external intervention at different stages of execution.
+A parent can spawn a child that spawns another child. Any level can wait, provided waits occur sequentially. In this example, the Web Agent requests access approval; after it completes, the Research Agent requests review approval.
 
 ```text
 Main Agent
-    |
-    └── Research Agent
-            |
-            └── Web Agent
-                    |
-                    └── WAIT: Request web access approval
-
-            |
-            └── WAIT: Request research review
-
-    |
-    └── Main Agent resumes and completes
+  └── Research Agent
+       └── Web Agent
+            └── WAIT: Web access approval
+       └── WAIT: Research review
+  └── Main Agent completes
 ```
 
-### Implementation
-
 ```typescript
-import { Callable, Runtime } from '../dist/index.js'
+import { Callable, CallableRegistry, Runtime } from '../dist/index.js'
 
-const runtime = new Runtime()
-
-// Level 3: Web Agent
 const webAgent = new Callable('web-agent', async (ctx) => {
 	if (ctx.data.approved !== true) {
 		ctx.state.set('topic', () => ctx.data.topic)
-
-		console.log('Web Agent: Waiting for approval...')
-
 		return ctx.wait({
 			reason: 'web_access_approval',
 			topic: ctx.data.topic,
 		})
 	}
-
-	console.log('Web Agent: Approval received!')
 
 	return ctx.complete({
 		topic: ctx.state.get('topic'),
@@ -219,114 +169,140 @@ const webAgent = new Callable('web-agent', async (ctx) => {
 	})
 })
 
-// Level 2: Research Agent
-const researchAgent = new Callable('research-agent', async (ctx) => {
-	// Spawn the Web Agent on the first invocation.
-	if (!ctx.state.get('web-agent-started')) {
-		ctx.state.set('web-agent-started', () => true)
+const researchAgent = new Callable(
+	'research-agent',
+	async (ctx) => {
+		if (!ctx.state.get('webAgentStarted')) {
+			ctx.state.set('webAgentStarted', () => true)
+			return ctx.spawn({ topic: ctx.data.topic }, webAgent)
+		}
 
-		console.log('Research Agent: Spawning Web Agent')
+		if (!ctx.state.get('reviewRequested')) {
+			ctx.state.set('webResult', () => ctx.data)
+			ctx.state.set('reviewRequested', () => true)
 
-		return ctx.spawn({ topic: ctx.data.topic }, webAgent)
-	}
+			return ctx.wait({
+				reason: 'research_review',
+				research: ctx.data,
+			})
+		}
 
-	// The Web Agent has completed.
-	// Store its result before requesting human review.
-	if (!ctx.state.get('review-requested')) {
-		ctx.state.set('web-result', () => ctx.data)
-		ctx.state.set('review-requested', () => true)
-
-		console.log('Research Agent: Waiting for review...')
-
-		return ctx.wait({
-			reason: 'research_review',
-			research: ctx.data,
+		return ctx.complete({
+			research: ctx.state.get('webResult'),
+			approved: ctx.data.reviewApproved,
 		})
-	}
+	},
+	{ webAgentStarted: false, reviewRequested: false }
+)
 
-	console.log('Research Agent: Review received!')
+const mainAgent = new Callable(
+	'main-agent',
+	async (ctx) => {
+		if (!ctx.state.get('researchStarted')) {
+			ctx.state.set('researchStarted', () => true)
+			return ctx.spawn({ topic: 'AI Agent Frameworks' }, researchAgent)
+		}
 
-	return ctx.complete({
-		research: ctx.state.get('web-result'),
-		approved: ctx.data.reviewApproved,
-	})
-})
+		return ctx.complete({
+			status: 'completed',
+			result: ctx.data,
+		})
+	},
+	{ researchStarted: false }
+)
 
-// Level 1: Main Agent
-const mainAgent = new Callable('main-agent', async (ctx) => {
-	if (!ctx.state.get('research-started')) {
-		ctx.state.set('research-started', () => true)
+const registry = new CallableRegistry()
+const runtime = new Runtime({ registry })
 
-		console.log('Main Agent: Starting research')
-
-		return ctx.spawn({ topic: 'AI Agent Frameworks' }, researchAgent)
-	}
-
-	console.log('Main Agent: Research completed')
-
-	return ctx.complete({
-		status: 'completed',
-		result: ctx.data,
-	})
-})
-
-// Register callables.
 runtime.register(webAgent)
 runtime.register(researchAgent)
 runtime.setDefault(mainAgent)
 
-// Execution 1: Start the entire hierarchy.
+// 1. The Web Agent waits for permission.
 const firstResult = await runtime.execute({})
+console.log(firstResult.type, firstResult.data.reason)
+// wait web_access_approval
 
-console.log('Execution 1:', firstResult)
+// 2. The Web Agent completes; the Research Agent waits for review.
+const secondResult = await runtime.execute({ approved: true })
+console.log(secondResult.type, secondResult.data.reason)
+// wait research_review
 
-// Execution 2: Provide Web Agent approval.
-const secondResult = await runtime.execute({
-	approved: true,
-})
-
-console.log('Execution 2:', secondResult)
-
-// Execution 3: Provide Research Agent approval.
-const thirdResult = await runtime.execute({
-	reviewApproved: true,
-})
-
-console.log('Execution 3:', thirdResult)
+// 3. The Research Agent completes; the Main Agent completes.
+const thirdResult = await runtime.execute({ reviewApproved: true })
+console.log(thirdResult.type, thirdResult.data.status)
+// completed completed
 ```
 
-### Execution Flow
+**Execution flow:**
 
-The example demonstrates three separate calls to the runtime.
+1. `main-agent` spawns `research-agent`, which spawns `web-agent`.
+2. `web-agent` returns `wait`. The first `execute()` call returns this wait result.
+3. The second `execute()` resumes `web-agent`; its completion data returns to `research-agent`.
+4. `research-agent` stores the child result and waits for human review.
+5. The third `execute()` resumes `research-agent`; it completes and passes its result to `main-agent`.
+6. `main-agent` is re-invoked and completes.
 
-**First execution**
+These are **sequential waits**, not multiple simultaneous waiting frames. Each `execute()` call uses the same `runtime`. The current runtime stores only one waiting frame at a time.
 
-- Main Agent spawns Research Agent.
-- Research Agent spawns Web Agent.
-- Web Agent requests web access approval.
-- Runtime returns a `wait` result.
+## 5. Serializing and loading a configured runtime
 
-**Second execution**
+The source exposes `persist()` and `Runtime.load()`. Restoring a snapshot requires a registry containing the callable implementations referenced by identifier.
 
-- Application provides web access approval.
-- Web Agent resumes and completes.
-- Its result propagates to Research Agent.
-- Research Agent requests an additional review.
-- Runtime returns another `wait` result.
+This example intentionally serializes **before execution**, avoiding the current limitations around restoring waiting frames or active frame stacks.
 
-**Third execution**
+```typescript
+import { Callable, CallableRegistry, Runtime } from '../dist/index.js'
 
-- Application provides research approval.
-- Research Agent resumes and completes.
-- Its result propagates to Main Agent.
-- Main Agent resumes and completes the overall execution.
+const task = new Callable('task', async ({ data, complete }) => {
+	return complete({ result: data.value * 2 })
+})
 
-The important characteristic is that neither the Main Agent nor the application needs to manually manage the internal callable hierarchy.
+const registry = new CallableRegistry()
+registry.add(task)
 
-Each callable is responsible for its own execution logic, while the runtime manages execution transitions and result propagation.
+const runtime = new Runtime({ registry })
+runtime.setDefault(task)
 
-**Note:** This example illustrates sequential suspension points, not simultaneous waiting agents. The current runtime maintains a single waiting frame per instance, and all three executions must use the same runtime instance. Persistent restoration across process restarts is not currently supported.
+// Save the snapshot as JSON. Store it externally if needed.
+const snapshot = JSON.stringify(runtime.persist())
 
----
+// Recreate the registry and callables in the process that loads it.
+// This example reuses them for brevity.
+const restored = Runtime.load({
+	registry,
+	data: JSON.parse(snapshot),
+})
 
-These examples cover the basic execution lifecycle of Mending.js: executing callables, dynamically spawning other callables, and suspending and resuming execution.
+const result = await restored.execute({ value: 21 })
+console.log(result.type) // 'completed'
+console.log(result.data) // { result: 42 }
+```
+
+`Runtime.load()` accepts `{ registry, data }` where `data` is the object produced by `runtime.persist()` (or a parsed JSON representation of it). It does **not** accept the serialized JSON string directly.
+
+### What persistence currently contains
+
+| Component       | Serialized information                                                  |
+| --------------- | ----------------------------------------------------------------------- |
+| `Runtime`       | Schema, kind, and nested runtime state.                                 |
+| `RuntimeState`  | Normal frames, executing frames, entrypoint identifier, callable state. |
+| `Frame`         | Frame identifier, callable identifier, parameters.                      |
+| `CallableState` | State values keyed by string.                                           |
+
+A callable implementation is not serialized. The registry must resolve every referenced callable identifier when loading frames and the entrypoint.
+
+### What persistence does not yet guarantee
+
+The waiting frame (`RuntimeState.waiting`) is **not** included in the serialized snapshot. Saving a runtime after it returns `wait` and then loading that snapshot is **not** a supported way to resume the waiting callable. The source also has a frame-stack issue that can leave surplus normal frames during execution. Use this API as an experimental serialization mechanism, not as a durable workflow engine.
+
+## Notes
+
+- `CallableState` is shared by callable identifier, not isolated per frame.
+- Each callable should **return** the result constructed by `ctx.complete`, `ctx.spawn`, or `ctx.wait`.
+- `runtime.register(child)` or `registry.add(child)` must be called before spawning the child.
+- A completion propagates data to the parent by replacing the parent's input and re-running its function.
+- A new `execute()` call resumes a waiting callable with **replacement** input, not merged input.
+- The current runtime does not perform automatic retries or coordinate execution across processes.
+
+For API details and known implementation issues, see the [Mending.js README](../README.md).
