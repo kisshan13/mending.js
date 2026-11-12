@@ -340,7 +340,7 @@ Each callable decides whether to complete, spawn, or wait. Mending.js handles di
 - **Registry-listener cleanup issue:** `CallableRegistry.on()` stores listeners under an event-suffixed key, but its returned disposer deletes the unsuffixed ID. This affects cleanup through `shutdown()`.
 - **Status reporting is incomplete:** `getStatus()` currently does not reflect active execution.
 
-See [Examples](./examples/README.md) for runnable patterns that match the current constructor and API surface.
+See [Examples](./example.md) for runnable patterns that match the current constructor and API surface.
 
 ## Development status
 

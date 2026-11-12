@@ -2,7 +2,7 @@
 
 These examples use the API exported by the supplied source. Every example creates a `CallableRegistry` and passes it to `new Runtime({ registry })`. They assume a locally built package and imports from `../dist/index.js`.
 
-> **Development status:** The runtime is experimental. The examples show its intended execution API; see the [root README](../README.md#current-limitations-and-implementation-caveats) for current frame-stack and persistence issues.
+> **Development status:** The runtime is experimental. The examples show its intended execution API; see the [root README](./README.md#current-limitations-and-implementation-caveats) for current frame-stack and persistence issues.
 
 ## 1. Basic callable execution
 
