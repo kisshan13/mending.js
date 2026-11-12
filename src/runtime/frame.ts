@@ -1,20 +1,29 @@
 import util from 'node:util'
-import { FrameMissingSpawnId } from './error.js'
+import { FrameMissingSpawnId, RuntimePersistError } from './error.js'
 import { Callable, FrameResult } from './types.js'
 import { generateId } from './utils.js'
 import { CallableState } from './state.js'
 import { Persistency } from './persistence.js'
+import { CallableRegistry } from './registry.js'
 
 export class Frame extends Persistency {
 	callable: Callable
 	private params: any
 	private id: string
 
-	constructor({ callable, params }: { callable: Callable; params: any }) {
+	constructor({
+		callable,
+		params,
+		id,
+	}: {
+		callable: Callable
+		params: any
+		id?: string
+	}) {
 		super()
 		this.callable = callable
 		this.params = params
-		this.id = generateId()
+		this.id = id || generateId()
 	}
 
 	async call(state: CallableState): Promise<FrameResult> {
@@ -54,7 +63,43 @@ export class Frame extends Persistency {
 		}
 	}
 
-	static load(data: any): void {}
+	static load(data: any): Frame {
+		const registry = data?.registry as CallableRegistry
+
+		if (!registry || !(registry instanceof CallableRegistry)) {
+			throw new RuntimePersistError(
+				`failed to load the config. Frame requires the seralized data as {"registry": <CallableRegistry>, "data": "<persisted-seralized-data>"}. CallableRegistry is missing from the object passed to load() function.`
+			)
+		}
+
+		const rawData = data?.data?.data
+
+		if (!rawData?.id) {
+			throw new RuntimePersistError(
+				`failed to load the config. Frame requires the seralized data as {"registry": <CallableRegistry>, "data": "<persisted-seralized-data>"}. "id" is missing from the object passed to load() function.`
+			)
+		}
+
+		if (!rawData?.callableId) {
+			throw new RuntimePersistError(
+				`failed to load the config. Frame requires the seralized data as {"registry": <CallableRegistry>, "data": "<persisted-seralized-data>"}. "data" field is missing from the object passed to load() function.`
+			)
+		}
+
+		const callable = registry.get(rawData?.callableId)
+
+		if (!callable) {
+			throw new RuntimePersistError(
+				`failed to load the config. Frame requires the seralized data as {"registry": <CallableRegistry>, "data": "<persisted-seralized-data>}. Callable not found for the frame.`
+			)
+		}
+
+		return new Frame({
+			callable: callable,
+			params: rawData?.params,
+			id: rawData?.id,
+		})
+	}
 
 	[util.inspect.custom]() {
 		return `Frame<callable=${this.callable.getIdentifier()}; id=${this.id} params=${this.params};>`

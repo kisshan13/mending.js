@@ -47,7 +47,11 @@ export class CallableState extends Persistency {
 		}
 	}
 
-	static load(data: any): void {}
+	static load(data: any): CallableState {
+		const state = data?.data?.state
+
+		return new CallableState(state)
+	}
 }
 
 export class RuntimeState extends Persistency {
@@ -180,8 +184,18 @@ export class RuntimeState extends Persistency {
 		}
 	}
 
-	static load(data: any): void {
-		const rawFrames = data?.data?.frames
+	static load(data: any): RuntimeState {
+		const registry = data?.registry as CallableRegistry
+
+		if (!registry || !(registry instanceof CallableRegistry)) {
+			throw new RuntimePersistError(
+				`failed to load the config. RuntimeState requires the seralized data as {"registry": <CallableRegistry>, "data": "<persisted-seralized-data>"}. CallableRegistry is missing from the object passed to load() function.`
+			)
+		}
+
+		const rawData = data?.data
+
+		const rawFrames = rawData?.data?.frames
 
 		if (!rawFrames) {
 			throw new RuntimePersistError(
@@ -189,9 +203,11 @@ export class RuntimeState extends Persistency {
 			)
 		}
 
-		const frames = rawFrames?.map((m: any) => Frame.load(m))
+		const frames = rawFrames?.map((m: any) =>
+			Frame.load({ registry: registry, data: m })
+		)
 
-		const rawExecutingFrames = data?.data?.executingFrames
+		const rawExecutingFrames = rawData?.data?.executingFrames
 
 		if (!rawExecutingFrames) {
 			throw new RuntimePersistError(
@@ -199,22 +215,47 @@ export class RuntimeState extends Persistency {
 			)
 		}
 
-		const executingFrames = rawExecutingFrames?.map((m: any) => Frame.load(m))
+		const executingFrames = rawExecutingFrames?.map((m: any) =>
+			Frame.load({ registry: registry, data: m })
+		)
 
-		const entrypoint = data?.data?.entrypoint
+		const rawEntrypoint = rawData?.data?.entrypoint
 
-		const callbackState = data?.data?.callbackState
+		if (!rawEntrypoint) {
+			throw new RuntimePersistError(
+				`failed to load config. key "entrypoint" is missing from kind "runtime.state"`
+			)
+		}
 
-		if (!callbackState) {
+		// add check here and throw error
+		const entrypoint = registry.get(rawEntrypoint)
+
+		const rawCallableState = rawData?.data?.callableState
+
+		if (!rawCallableState) {
 			throw new RuntimePersistError(
 				'failed to load the config. key "callableState" is missing from kind "runtime.state"'
 			)
 		}
 
-		Object.keys(callbackState).forEach((key) => {
-			const rawState = callbackState[key]
+		const callableState: Map<string, CallableState> = new Map()
+
+		Object.keys(rawCallableState).forEach((key) => {
+			const rawState = rawCallableState[key]
 
 			const state = CallableState.load(rawState)
+
+			callableState.set(key, state)
 		})
+
+		const runtimeState = new RuntimeState(registry)
+
+		runtimeState.setDefault(entrypoint as Callable)
+
+		runtimeState.callableState = callableState
+		runtimeState.frame = frames
+		runtimeState.executingFrame = executingFrames
+
+		return runtimeState
 	}
 }

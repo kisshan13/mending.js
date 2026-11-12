@@ -141,13 +141,32 @@ export default class Runtime extends Persistency {
 		}
 	}
 
-	static load(data: any): void {
-		const rawState = data?.data?.state
+	static load(data: any): Runtime {
+		const registry = data?.registry as CallableRegistry
+
+		if (!registry || !(registry instanceof CallableRegistry)) {
+			throw new RuntimePersistError(
+				`failed to load the config. Runtime requires the seralized data as {"registry": <CallableRegistry>, "data": "<persisted-seralized-data>"}. CallableRegistry is missing from the object passed to load() function.`
+			)
+		}
+
+		const rawData = data?.data
+
+		const rawState = rawData?.data?.state
 
 		if (!rawState) {
 			throw new RuntimePersistError(
 				`failed to load the config. key "state" is missing from kind "runtime"`
 			)
 		}
+
+		const runtimeState = RuntimeState.load({
+			registry: registry,
+			data: rawState,
+		})
+
+		const runtime = new Runtime({ registry: registry, state: runtimeState })
+
+		return runtime
 	}
 }
