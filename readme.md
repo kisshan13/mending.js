@@ -332,11 +332,9 @@ Each callable decides whether to complete, spawn, or wait. Mending.js handles di
 
 - **Experimental API:** No npm release or compatibility guarantees.
 - **No persistent storage integration:** You must save snapshots yourself; there is no automatic checkpointing.
-- **Waiting frames are not serialized:** Paused execution cannot reliably be restored through `Runtime.load()`.
 - **Single waiting frame:** Only one `waiting` slot exists per runtime state.
 - **No distributed execution, retries, or scheduling:** These concerns belong to the application.
 - **Callable state is shared per identifier:** Concurrent or repeated logical invocations of the same callable do not get isolated state automatically.
-- **Frame-stack issue:** The current `RuntimeState.push(frame, 'execute')` also pushes the frame onto the normal stack. This can leave extra frames and makes repeated execution and snapshot recovery unreliable until corrected.
 - **Registry-listener cleanup issue:** `CallableRegistry.on()` stores listeners under an event-suffixed key, but its returned disposer deletes the unsuffixed ID. This affects cleanup through `shutdown()`.
 - **Status reporting is incomplete:** `getStatus()` currently does not reflect active execution.
 
