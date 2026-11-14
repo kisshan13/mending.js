@@ -47,7 +47,7 @@ export class CallableRegistry {
 		this.listeners.set(`${id}:${event}`, callback)
 
 		return () => {
-			this.listeners.delete(id)
+			this.listeners.delete(`${id}:${event}`)
 		}
 	}
 

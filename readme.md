@@ -335,7 +335,6 @@ Each callable decides whether to complete, spawn, or wait. Mending.js handles di
 - **Single waiting frame:** Only one `waiting` slot exists per runtime state.
 - **No distributed execution, retries, or scheduling:** These concerns belong to the application.
 - **Callable state is shared per identifier:** Concurrent or repeated logical invocations of the same callable do not get isolated state automatically.
-- **Registry-listener cleanup issue:** `CallableRegistry.on()` stores listeners under an event-suffixed key, but its returned disposer deletes the unsuffixed ID. This affects cleanup through `shutdown()`.
 - **Status reporting is incomplete:** `getStatus()` currently does not reflect active execution.
 
 See [Examples](./example.md) for runnable patterns that match the current constructor and API surface.
