@@ -6,11 +6,23 @@ Mending.js provides primitives for running registered functions, spawning child 
 
 Mending.js is **not** an agent framework. It does not implement model calls, planning, scheduling, or agent decision-making.
 
-> **Status: Under development.** Mending.js is at version `0.1.0` and its API, persistence format, and execution behavior are experimental and may change without notice.
+> **Status: Under development.** Mending.js is published as version `0.1.0`, but its API, persistence format, and execution behavior are still experimental and may change without notice.
 
 ## Installation
 
-The package is not published to npm yet. Build the project locally and import from its generated `dist` directory. The examples below assume imports from `./dist/index.js`; adjust the relative path for your project.
+Install Mending.js from npm:
+
+```bash
+npm install mending.js
+```
+
+Then import the runtime directly into your application:
+
+```typescript
+import { Callable, CallableRegistry, Runtime } from 'mending.js'
+```
+
+See the [Mending.js npm package](https://www.npmjs.com/package/mending.js) for the published package.
 
 Mending.js requires Node.js `>=17.8.0`.
 
@@ -19,7 +31,7 @@ Mending.js requires Node.js `>=17.8.0`.
 Create a callable, provide a registry to the runtime, set an entrypoint, and execute it.
 
 ```typescript
-import { Callable, CallableRegistry, Runtime } from './dist/index.js'
+import { Callable, CallableRegistry, Runtime } from 'mending.js'
 
 const greeting = new Callable('greeting', async ({ data, complete }) => {
 	return complete({ message: `Hello, ${data.name}!` })
@@ -138,7 +150,7 @@ If a child callable completes, its completion data replaces the parent frame's i
 ### Spawning another callable
 
 ```typescript
-import { Callable, CallableRegistry, Runtime } from './dist/index.js'
+import { Callable, CallableRegistry, Runtime } from 'mending.js'
 
 const worker = new Callable('worker', async ({ data, complete }) => {
 	return complete({ doubled: data.value * 2 })
@@ -174,7 +186,7 @@ The parent uses callable state to remember that it already spawned the child. Wi
 ### Waiting for external input
 
 ```typescript
-import { Callable, CallableRegistry, Runtime } from './dist/index.js'
+import { Callable, CallableRegistry, Runtime } from 'mending.js'
 
 const approval = new Callable(
 	'approval',
@@ -245,7 +257,7 @@ The current source includes a serialization API for the runtime, frame stacks, w
 Serialized snapshots store **callable identifiers**, not executable functions. Re-register the corresponding callables before loading.
 
 ```typescript
-import { Callable, CallableRegistry, Runtime } from './dist/index.js'
+import { Callable, CallableRegistry, Runtime } from 'mending.js'
 
 const job = new Callable('job', async ({ data, complete }) => {
 	return complete({ value: data.value * 2 })
@@ -366,4 +378,4 @@ See [Examples](./example.md) for runnable patterns that match the current constr
 
 ## Development status
 
-Mending.js is actively evolving. Interfaces and runtime behavior may change without notice; there is no published stability roadmap. Feedback, experiments, and contributions are welcome.
+Mending.js is actively evolving. Interfaces and runtime behavior may change without notice, and there is no formal stability roadmap yet. Feedback, experiments, and contributions are welcome.
