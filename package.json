@@ -1,11 +1,16 @@
 {
 	"name": "mending.js",
-	"version": "0.0.1",
-	"description": "Ready to mend ?",
+	"version": "0.1.0",
+	"description": "A lightweight execution runtime for dynamically composed, agentic systems.",
 	"keywords": [
-		"sse",
-		"server-sent-events",
-		"event-source"
+		"agentic",
+		"agents",
+		"execution-runtime",
+		"workflow",
+		"orchestration",
+		"callable",
+		"state-management",
+		"persistence"
 	],
 	"homepage": "https://github.com/kisshan13/mending.js#readme",
 	"bugs": {

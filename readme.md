@@ -6,11 +6,13 @@ Mending.js provides primitives for running registered functions, spawning child 
 
 Mending.js is **not** an agent framework. It does not implement model calls, planning, scheduling, or agent decision-making.
 
-> **Status: Under development.** Mending.js has not been published to npm. Its API, persistence format, and execution behavior are experimental and may change without notice.
+> **Status: Under development.** Mending.js is at version `0.1.0` and its API, persistence format, and execution behavior are experimental and may change without notice.
 
 ## Installation
 
-There is no published npm package yet. Build the project locally and import from its generated `dist` directory. The examples below assume imports from `./dist/index.js`; adjust the relative path for your project.
+The package is not published to npm yet. Build the project locally and import from its generated `dist` directory. The examples below assume imports from `./dist/index.js`; adjust the relative path for your project.
+
+Mending.js requires Node.js `>=17.8.0`.
 
 ## Quick start
 
@@ -85,6 +87,31 @@ The registry accepts multiple callables with `add(...callables)`. It exposes `ge
 A `Frame` represents one callable invocation, including its callable, input parameters, and generated frame identifier. The runtime maintains stacks of frames while it processes spawn and completion results.
 
 A `CallableState` is separate from a frame: it is keyed by the **callable identifier**. Repeated invocations of the same callable in one runtime state share that callable's state. It is not a separate state object for each spawned frame.
+
+### Instrumentation
+
+Instrumentation is available from the `mending.js/instrumentation` subpath. It uses Node.js `AsyncLocalStorage` to associate a trace context with frame execution and an `EventCollector` to store frame lifecycle events.
+
+```typescript
+import {
+	EventCollector,
+	FrameInstrumentation,
+	InstrumentationContext,
+} from 'mending.js/instrumentation'
+
+const context = new InstrumentationContext()
+const collector = new EventCollector()
+
+new FrameInstrumentation(context, collector).install()
+
+await context.run({ traceId: 'trace-1', frameId: 'root-frame' }, () =>
+	runtime.execute({ name: 'World' })
+)
+
+console.log(collector.getEvents())
+```
+
+The collector records `frame:start`, `frame:completed`, and `frame:error` events while a context is active. `FrameInstrumentation.install()` patches `Frame.prototype.call`, so install it once during application setup.
 
 ## Execution results
 
@@ -209,7 +236,7 @@ Values should be serializable if you intend to use `persist()` and JSON storage.
 
 ## Persistence and loading
 
-The current source includes a serialization API for the runtime, frame stacks, and callable state:
+The current source includes a serialization API for the runtime, frame stacks, waiting frames, and callable state:
 
 - `runtime.persist()` produces a structured snapshot (currently labeled schema `0.0.1`).
 - `Runtime.load({ registry, data })` constructs a runtime from a snapshot.
@@ -244,11 +271,9 @@ const result = await restored.execute({ value: 21 })
 console.log(result.data) // { value: 42 }
 ```
 
-You must store and retrieve the serialized value yourself. Mending.js does not currently provide a database adapter, automatic checkpointing, or restart-safe execution guarantees.
+You must store and retrieve the serialized value yourself. Mending.js does not currently provide a database adapter, automatic checkpointing, or transactional or distributed execution guarantees. A persisted waiting frame is restored by `Runtime.load()` and can be resumed with the same registry, provided the corresponding callables are registered before loading.
 
-**Critical restriction:** `RuntimeState.persist()` does **not** serialize its `waiting` field. Consequently, a snapshot made while a callable is waiting cannot currently restore that waiting frame. Treat persistence as an experimental serialization facility, **not** reliable suspend-and-resume durability across process restarts.
-
-See the [examples](./examples/README.md) for basic execution, spawning, multiple suspension points, and snapshot loading.
+See the [examples](./examples) directory for basic execution, spawning, multiple suspension points, and snapshot loading.
 
 ## API reference
 
@@ -319,21 +344,21 @@ The execution model supports dynamic delegation with nested callables:
 
 ```text
 Main Agent
-  └── Research Agent
-       ├── Web Agent
-       │    └── WAIT: Approval required
-       └── Analysis Agent
-            └── WAIT: Additional input required
+  +-- Research Agent
+       +-- Web Agent
+       |    +-- WAIT: Approval required
+       +-- Analysis Agent
+            +-- WAIT: Additional input required
 ```
 
 Each callable decides whether to complete, spawn, or wait. Mending.js handles dispatch and result propagation; the application supplies the logic for decisions, permissions, tool use, scheduling, and retries.
 
 ## Current limitations and implementation caveats
 
-- **Experimental API:** No npm release or compatibility guarantees.
+- **Experimental API:** Version `0.1.0` has no compatibility guarantees.
 - **No persistent storage integration:** You must save snapshots yourself; there is no automatic checkpointing.
 - **Single waiting frame:** Only one `waiting` slot exists per runtime state.
-- **No distributed execution, retries, or scheduling:** These concerns belong to the application.
+- **No database adapter, distributed execution, retries, or scheduling:** These concerns belong to the application.
 - **Callable state is shared per identifier:** Concurrent or repeated logical invocations of the same callable do not get isolated state automatically.
 - **Status reporting is incomplete:** `getStatus()` currently does not reflect active execution.
 
