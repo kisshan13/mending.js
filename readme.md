@@ -285,7 +285,7 @@ console.log(result.data) // { value: 42 }
 
 You must store and retrieve the serialized value yourself. Mending.js does not currently provide a database adapter, automatic checkpointing, or transactional or distributed execution guarantees. A persisted waiting frame is restored by `Runtime.load()` and can be resumed with the same registry, provided the corresponding callables are registered before loading.
 
-See the [examples](./examples) directory for basic execution, spawning, multiple suspension points, and snapshot loading.
+See the [examples](./examples) directory for basic execution, spawning, multiple suspension points, instrumentation, and snapshot loading.
 
 ## API reference
 

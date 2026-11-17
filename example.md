@@ -245,7 +245,43 @@ console.log(thirdResult.type, thirdResult.data.status)
 
 These are **sequential waits**, not multiple simultaneous waiting frames. Each `execute()` call uses the same `runtime`. The current runtime stores only one waiting frame at a time.
 
-## 5. Serializing and loading a configured runtime
+## 5. Collecting frame instrumentation events
+
+Use the instrumentation helpers to collect lifecycle events for frames executed inside an `InstrumentationContext`.
+
+```typescript
+import { Callable, CallableRegistry, Runtime } from '../dist/index.js'
+import {
+	EventCollector,
+	FrameInstrumentation,
+	InstrumentationContext,
+} from '../dist/instrumentation/index.js'
+
+const task = new Callable('task', async ({ data, complete }) => {
+	return complete({ result: data.value * 2 })
+})
+
+const registry = new CallableRegistry()
+const runtime = new Runtime({ registry })
+runtime.setDefault(task)
+
+const context = new InstrumentationContext()
+const collector = new EventCollector()
+new FrameInstrumentation(context, collector).install()
+
+const result = await context.run(
+	{ traceId: 'trace-1', frameId: 'runtime-entry' },
+	() => runtime.execute({ value: 21 })
+)
+
+console.log(result.data) // { result: 42 }
+console.log(collector.getEvents().map((event) => event.type))
+// [ 'frame:start', 'frame:completed' ]
+```
+
+`FrameInstrumentation.install()` patches frame calls globally, while the `InstrumentationContext` determines which calls are recorded. Events include timestamps, trace and frame identifiers, and the callable identifier.
+
+## 6. Serializing and loading a configured runtime
 
 The source exposes `persist()` and `Runtime.load()`. Restoring a snapshot requires a registry containing the callable implementations referenced by identifier.
 
